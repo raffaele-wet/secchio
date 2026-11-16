@@ -1,0 +1,1198 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Controllo Secchio Caldaia</title>
+<meta name="theme-color" content="#0f172a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="favicon.png">
+<style>
+  :root {
+    --bg: #0f172a;
+    --card: #1e293b;
+    --border: #334155;
+    --text: #f8fafc;
+    --muted: #94a3b8;
+    --accent: #38bdf8;
+    --green: #22c55e;
+    --yellow: #eab308;
+    --red: #ef4444;
+    --btn: #2563eb;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 14px;
+    line-height: 1.4;
+  }
+  .container { max-width: 480px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+  header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 4px 2px;
+  }
+  h1 { font-size: 1.2rem; font-weight: 700; color: var(--accent); }
+  .badge {
+    font-size: 0.75rem; font-weight: 600; padding: 4px 10px; border-radius: 999px;
+    background: #1e293b; border: 1px solid var(--border); color: var(--muted);
+  }
+  .badge.ok { border-color: var(--green); color: var(--green); }
+  .badge.err { border-color: var(--red); color: var(--red); background: rgba(239,68,68,0.12); }
+
+  .alert {
+    display: none; background: rgba(239,68,68,0.16); border: 1px solid var(--red);
+    color: #fecaca; padding: 12px 14px; border-radius: 12px;
+  }
+  .alert.visible { display: block; }
+  .alert strong { display: block; color: var(--red); margin-bottom: 4px; font-size: 0.95rem; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 16px;
+  }
+  .card h2 { font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 12px; }
+
+  /* Quadrato perfetto 1:1 per il Monitoraggio in tempo reale (compatto anche su smartphone) */
+  .monitor-card {
+    position: relative;
+    overflow: hidden;
+    padding: 12px 14px;
+    background: #222438;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  }
+  .monitor-card.draining {
+    border-color: var(--accent);
+    box-shadow: 0 0 22px rgba(56, 189, 248, 0.38);
+  }
+  .monitor-card.error {
+    border-color: var(--red);
+    box-shadow: 0 0 22px rgba(239, 68, 68, 0.42);
+  }
+  #waterBgCanvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    pointer-events: none;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    display: block;
+  }
+  .monitor-content {
+    position: relative;
+    z-index: 1;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .monitor-top {
+    display: flex;
+    flex-direction: column;
+  }
+  .monitor-bottom {
+    display: flex;
+    flex-direction: column;
+    margin-top: auto;
+  }
+  .monitor-card h2 {
+    color: #e2e8f0;
+    font-size: 0.78rem;
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.95), 0 0 3px rgba(0, 0, 0, 0.95);
+    margin-bottom: 2px;
+  }
+
+  .level-row { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; }
+  .level-pct {
+    font-size: clamp(1.75rem, 6.2vw, 2.35rem); font-weight: 800; letter-spacing: -0.02em; line-height: 1.05;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.95), 0 0 4px rgba(0, 0, 0, 0.98);
+  }
+  .level-cm {
+    font-size: 0.88rem; color: #e2e8f0; font-weight: 600;
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.95), 0 0 3px rgba(0, 0, 0, 0.95);
+  }
+
+  .bar-track {
+    width: 100%; height: 15px; background: rgba(15, 23, 42, 0.30); border-radius: 999px;
+    backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
+    overflow: hidden; border: 1px solid rgba(255, 255, 255, 0.32); margin-bottom: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.30);
+    transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.45s ease;
+  }
+  .bar-fill {
+    height: 100%; width: 0%; background: var(--green);
+    transition: width 0.4s ease, background-color 0.4s ease;
+  }
+
+  .grid {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px;
+    width: 100%;
+    transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.45s ease;
+  }
+  .monitor-card .grid {
+    gap: 6px;
+  }
+  .monitor-card.draining .bar-track,
+  .monitor-card.draining .grid {
+    opacity: 0;
+    transform: translateY(48px);
+    pointer-events: none;
+  }
+  .stat {
+    min-width: 0;
+    overflow: hidden;
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.13), rgba(15, 23, 42, 0.25));
+    backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
+    border: 1px solid rgba(255, 255, 255, 0.34);
+    border-top-color: rgba(255, 255, 255, 0.52);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.26);
+    border-radius: 10px; padding: 10px 12px;
+  }
+  .monitor-card .stat {
+    padding: 6px 8px;
+    border-radius: 8px;
+  }
+  .stat.sensor-warn {
+    border-color: rgba(234, 179, 8, 0.78);
+    background: linear-gradient(145deg, rgba(234, 179, 8, 0.24), rgba(15, 23, 42, 0.45));
+  }
+  .stat.sensor-err {
+    border-color: rgba(239, 68, 68, 0.85);
+    background: linear-gradient(145deg, rgba(239, 68, 68, 0.28), rgba(15, 23, 42, 0.48));
+  }
+  .stat-label {
+    font-size: 0.72rem; color: #e0f2fe; text-transform: uppercase;
+    font-weight: 700; letter-spacing: 0.03em;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.98), 0 0 5px rgba(0, 0, 0, 0.90);
+  }
+  .monitor-card .stat-label {
+    font-size: clamp(0.54rem, 2.2vw, 0.64rem);
+    letter-spacing: 0.01em;
+    line-height: 1.15;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .stat-val {
+    font-size: 1.05rem; font-weight: 800; color: #ffffff; margin-top: 2px;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.98), 0 0 6px rgba(0, 0, 0, 0.95);
+    overflow-wrap: anywhere;
+  }
+  .monitor-card .stat-val {
+    font-size: clamp(0.72rem, 2.6vw, 0.90rem);
+    line-height: 1.18;
+    margin-top: 1px;
+  }
+
+  .btn-stack { display: flex; flex-direction: column; gap: 10px; }
+  .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  button {
+    width: 100%; padding: 12px 14px; border: none; border-radius: 10px;
+    font-size: 0.92rem; font-weight: 600; cursor: pointer; color: #fff;
+    background: var(--btn); transition: opacity 0.15s, transform 0.08s;
+  }
+  button:active { transform: scale(0.98); }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  .btn-pump-on { background: #0284c7; }
+  .btn-pump-off { background: var(--red); }
+  .btn-cal-empty { background: #0d9488; }
+  .btn-cal-full { background: #d97706; }
+  .btn-danger { background: var(--red); }
+  .btn-secondary { background: #475569; }
+
+  .form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+  label { font-size: 0.85rem; color: var(--muted); }
+  input[type="number"], input[type="text"], input[type="password"] {
+    width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border);
+    background: #0f172a; color: var(--text); font-size: 1rem;
+  }
+  .toggle-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 0 12px; gap: 12px;
+  }
+  .toggle-row input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--accent); }
+  .cal-info { font-size: 0.82rem; color: var(--muted); margin-bottom: 10px; }
+
+  .unlock-row {
+    display: flex; gap: 10px; align-items: center;
+  }
+  .unlock-row input {
+    flex: 1; text-align: center; font-weight: 700; letter-spacing: 0.15em;
+  }
+  .unlock-row button {
+    width: auto; min-width: 120px;
+  }
+
+  .protected-section { display: none; }
+  .protected-section.unlocked { display: block; }
+
+  .modal-backdrop {
+    display: none; position: fixed; inset: 0; z-index: 50;
+    background: rgba(2, 6, 23, 0.82); backdrop-filter: blur(3px);
+    padding: 16px; align-items: center; justify-content: center; overflow-y: auto;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal-box {
+    width: 100%; max-width: 460px; max-height: 90vh; overflow-y: auto;
+    background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+    padding: 18px; box-shadow: 0 20px 45px rgba(0, 0, 0, 0.55);
+  }
+  .modal-box h3 { font-size: 1.05rem; color: var(--yellow); margin-bottom: 8px; }
+  .warn-box {
+    background: rgba(234, 179, 8, 0.12); border: 1px solid rgba(234, 179, 8, 0.5);
+    color: #fef08a; border-radius: 10px; padding: 10px 12px;
+    font-size: 0.85rem; margin-bottom: 14px;
+  }
+  .slide-wrap {
+    position: relative; width: 100%; height: 50px; background: #0f172a;
+    border: 1px solid var(--border); border-radius: 999px;
+    overflow: hidden; margin-bottom: 14px; user-select: none;
+  }
+  .slide-fill {
+    position: absolute; left: 0; top: 0; bottom: 0; width: 0%;
+    background: linear-gradient(90deg, rgba(234,179,8,0.25), rgba(34,197,94,0.45));
+    pointer-events: none;
+  }
+  .slide-text {
+    position: absolute; inset: 0; display: flex; align-items: center;
+    justify-content: space-between; padding: 0 18px; font-size: 0.85rem;
+    font-weight: 700; color: var(--muted); pointer-events: none;
+  }
+  .slide-text .yes-lbl { color: var(--green); }
+  .slide-range {
+    position: relative; width: 100%; height: 50px; margin: 0;
+    -webkit-appearance: none; appearance: none; background: transparent;
+    cursor: grab; z-index: 2; touch-action: pan-y;
+  }
+  .slide-range::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 46px; height: 46px; border-radius: 50%;
+    background: var(--accent); border: 2px solid #fff;
+  }
+  .live-mini {
+    background: #0f172a; border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 12px; font-size: 0.85rem; margin-bottom: 12px;
+    display: flex; justify-content: space-between;
+  }
+  .hist-item {
+    border: 1px solid var(--border); background: #0f172a; border-radius: 11px;
+    padding: 10px 12px; margin-top: 8px; display: flex; flex-direction: column; gap: 4px;
+  }
+  .hist-top { display: flex; justify-content: space-between; align-items: center; }
+  .pill {
+    font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+    border: 1px solid var(--border);
+  }
+  .pill.ok { color: var(--green); border-color: var(--green); }
+  .pill.stop { color: var(--yellow); border-color: var(--yellow); }
+  .pill.err { color: var(--red); border-color: var(--red); }
+
+  .toast {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    background: #0284c7; color: #fff; padding: 10px 16px; border-radius: 999px;
+    font-size: 0.85rem; font-weight: 600; opacity: 0; pointer-events: none;
+    transition: opacity 0.25s; box-shadow: 0 8px 20px rgba(0,0,0,0.45);
+    max-width: 90%; text-align: center; z-index: 120;
+  }
+  .toast.err { background: var(--red); }
+  .toast.show { opacity: 1; }
+  footer { text-align: center; font-size: 0.75rem; color: var(--muted); padding-bottom: 18px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1 style="display:flex; align-items:center; gap:8px;">
+      <img src="favicon.png" alt="" style="width:24px; height:24px; image-rendering:pixelated;">
+      <span>Controllo Secchio</span>
+    </h1>
+    <span id="connBadge" class="badge">Connessione...</span>
+  </header>
+
+  <div id="timeoutAlert" class="alert">
+    <strong>ALLARME ERRORE_TIMEOUT!</strong>
+    Il livello non è sceso entro il tempo limite di sicurezza (tubo ostruito, pompa disinnescata o sensore bloccato).
+    Il riavvio automatico è bloccato per sicurezza.
+    <div id="resetErrWrap" class="protected-section" style="margin-top:10px;">
+      <button class="btn-danger" onclick="sendCmd('error_reset')">Reset Errore Timeout</button>
+    </div>
+  </div>
+
+  <div id="sensorAlert" class="alert">
+    <strong>ERRORE SENSORE ULTRASUONI</strong>
+    Il sensore HC-SR04 non viene rilevato da oltre 5 minuti (<span id="sensorAlertDur">--</span>). Controllare il cavo o i collegamenti. Avvio automatico sospeso.
+  </div>
+
+  <section class="card monitor-card" id="monitorCard">
+    <canvas id="waterBgCanvas" width="86" height="86"></canvas>
+    <div class="monitor-content">
+      <div class="monitor-top">
+        <h2>Monitoraggio in tempo reale</h2>
+        <div class="level-row">
+          <div class="level-pct" id="levelPct">--%</div>
+          <div class="level-cm" id="distanceCm">--.-- cm</div>
+        </div>
+        <div class="bar-track">
+          <div id="levelBar" class="bar-fill"></div>
+        </div>
+      </div>
+      <div class="monitor-bottom">
+        <div class="grid">
+          <div class="stat" id="pumpStatCard">
+            <div class="stat-label" id="pumpStateLabel">Stato Pompa</div>
+            <div class="stat-val" id="pumpState">--</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Svuotamenti Totali</div>
+            <div class="stat-val" id="drainCount">0</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Prossimo Svuotamento</div>
+            <div class="stat-val" id="nextDrain">--</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Ultimo Svuotamento</div>
+            <div class="stat-val" id="lastDrain">--</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Tempi di Svuotamento</h2>
+    <div class="grid">
+      <div class="stat">
+        <div class="stat-label">Ultimo Svuotamento</div>
+        <div class="stat-val" id="lastDrainDur">--</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Durata Media Autonomi</div>
+        <div class="stat-val" id="avgDrainDur">--</div>
+      </div>
+      <div class="stat" style="grid-column: 1 / -1;">
+        <div class="stat-label">Velocità di Riempimento Stimata</div>
+        <div class="stat-val" id="fillRateVal">--</div>
+      </div>
+    </div>
+    <div style="margin-top: 12px;">
+      <button class="btn-secondary" onclick="openHistoryModal()">Apri Storico Svuotamenti &rarr;</button>
+    </div>
+  </section>
+
+  <!-- Riquadro inserimento Password per sbloccare i controlli -->
+  <section class="card" id="unlockCard">
+    <h2>&#128274; Sblocca Comandi e Impostazioni</h2>
+    <p class="cal-info">
+      Inserisci la password per abilitare Controllo Manuale, Calibrazione Livelli e Impostazioni:
+    </p>
+    <div class="unlock-row">
+      <input id="pinInput" type="password" inputmode="numeric" placeholder="Password" autocomplete="off">
+      <button class="btn-pump-on" onclick="unlockControls()">Sblocca</button>
+    </div>
+  </section>
+
+  <!-- Sezioni protette da password (visibili solo dopo lo sblocco) -->
+  <section class="card protected-section" id="ctrlSection">
+    <h2>Controllo Manuale</h2>
+    <p class="cal-info">
+      Auto-svuotamento: avvio <strong>&ge; <span id="lblStartPct">80</span>%</strong> | arresto <strong>&le; <span id="lblStopPct">40</span>%</strong>
+    </p>
+    <div class="btn-stack">
+      <button id="btnPumpToggle" class="btn-pump-on" onclick="sendCmd('pump_toggle')">Avvia Pompa (Manuale)</button>
+    </div>
+  </section>
+
+  <section class="card protected-section" id="calSection">
+    <h2>Calibrazione Livelli</h2>
+    <p class="cal-info">
+      Parametri attuali: <strong>D_vuoto = <span id="calEmpty">--</span> cm</strong> |
+      <strong>D_pieno = <span id="calFull">--</span> cm</strong>
+    </p>
+    <button class="btn-secondary" onclick="openCalModal()">Calibrazione Livelli &rarr;</button>
+  </section>
+
+  <section class="card protected-section" id="settingsSection">
+    <h2>Soglie, Sicurezza &amp; Display</h2>
+    <div class="btn-row" style="margin-bottom:12px;">
+      <div class="form-group" style="margin-bottom:0;">
+        <label for="autoStartInput">Avvio automatico (%)</label>
+        <input id="autoStartInput" type="number" min="5" max="100" value="80">
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label for="stopPctInput">Arresto pompa (%)</label>
+        <input id="stopPctInput" type="number" min="0" max="95" value="40">
+      </div>
+    </div>
+    <div class="form-group">
+      <label for="timeoutInput">Timeout stallo pompa senza calo livello (secondi, 30–1800)</label>
+      <input id="timeoutInput" type="number" min="30" max="1800" value="300">
+    </div>
+    <div class="toggle-row">
+      <label for="alwaysOnToggle">Tieni lo schermo sempre acceso</label>
+      <input id="alwaysOnToggle" type="checkbox">
+    </div>
+    <button class="btn-secondary" onclick="saveRemoteSettings()">Salva Impostazioni</button>
+  </section>
+
+  <footer id="netInfo">Wi-Fi STA: -- | Uptime: --</footer>
+</div>
+
+<!-- Modale Calibrazione -->
+<div id="calModal" class="modal-backdrop" onclick="if(event.target===this) closeCalModal()">
+  <div class="modal-box">
+    <h3>Avviso Calibrazione Livelli</h3>
+    <div id="calStepWarn">
+      <div class="warn-box">
+        Attenzione: stai per modificare i parametri di calibrazione del sensore.
+        I parametri attuali resteranno invariati finché non imposti una nuova soglia. Vuoi proseguire?
+      </div>
+      <div class="live-mini">
+        <span>Attuali: <strong><span id="modalEmpty1">--</span> / <span id="modalFull1">--</span> cm</strong></span>
+        <span>Live: <strong><span id="modalLive1">--</span></strong></span>
+      </div>
+      <div class="slide-wrap">
+        <div id="calSlideFill" class="slide-fill"></div>
+        <div class="slide-text">
+          <span>NO</span>
+          <span>Trascina verso SÌ &rarr;</span>
+          <span class="yes-lbl">SÌ</span>
+        </div>
+        <input id="calConfirmSlider" class="slide-range" type="range" min="0" max="100" value="0">
+      </div>
+      <button class="btn-secondary" onclick="closeCalModal()">Annulla</button>
+    </div>
+
+    <div id="calStepActions" style="display:none;">
+      <p class="cal-info">
+        Parametri attuali: <strong>D_vuoto = <span id="modalEmpty2">--</span> cm</strong> |
+        <strong>D_pieno = <span id="modalFull2">--</span> cm</strong>
+      </p>
+      <div class="live-mini">
+        <span>Lettura attuale sensore:</span>
+        <strong id="modalLive2">--.-- cm (--%)</strong>
+      </div>
+      <div class="btn-stack">
+        <div class="btn-row">
+          <button class="btn-cal-empty" onclick="sendCmd('cal_empty')">Imposta VUOTO (0%)</button>
+          <button class="btn-cal-full" onclick="sendCmd('cal_full')">Imposta PIENO (100%)</button>
+        </div>
+        <button class="btn-danger" onclick="sendCmd('cal_reset')">Reset Calibrazione (35 / 8 cm)</button>
+        <button class="btn-secondary" onclick="closeCalModal()">Chiudi (mantieni attuali)</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modale Storico Svuotamenti -->
+<div id="histModal" class="modal-backdrop" onclick="if(event.target===this) closeHistoryModal()">
+  <div class="modal-box">
+    <h3 style="color:var(--accent);">Storico Svuotamenti</h3>
+    <div class="live-mini">
+      <span>Autonomi OK: <strong id="hSumAuto">0</strong></span>
+      <span>Durata Media: <strong id="hSumAvg">--</strong></span>
+    </div>
+    <div id="histList" style="margin-bottom:14px; font-size:0.85rem; color:var(--muted);">Nessun dato</div>
+    <div class="btn-stack">
+      <div id="clearHistWrap" class="protected-section">
+        <button class="btn-danger" onclick="if(confirm('Cancellare tutto lo storico e azzerare il contatore degli svuotamenti totali?')) sendCmd('clear_history')">Cancella Storico</button>
+      </div>
+      <button class="btn-secondary" onclick="closeHistoryModal()">Chiudi</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx0ncy5ucYZuqJFa_DFtRaq7bTDJfLaCDkw_ZGWsw4wJ49GlkjCQiAnEQ-xjnhmX8hm/exec";
+
+async function apiGetState() {
+  const res = await fetch(SCRIPT_URL + "?action=state&_t=" + Date.now(), {
+    method: "GET",
+    cache: "no-store"
+  });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return await res.json();
+}
+
+async function apiPost(payload) {
+  const res = await fetch(SCRIPT_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return await res.json();
+}
+
+let currentPin = "";
+let isUnlocked = false;
+let settingsDirty = false;
+let lastSeenCmdResultId = 0;
+let cachedHistory = { totalRecords: 0, autoCompletedCount: 0, avgDrainDurationSec: 0, records: [] };
+
+const pinInput = document.getElementById('pinInput');
+const unlockCard = document.getElementById('unlockCard');
+const timeoutInput = document.getElementById('timeoutInput');
+const alwaysOnToggle = document.getElementById('alwaysOnToggle');
+const autoStartInput = document.getElementById('autoStartInput');
+const stopPctInput = document.getElementById('stopPctInput');
+const calConfirmSlider = document.getElementById('calConfirmSlider');
+const calSlideFill = document.getElementById('calSlideFill');
+
+pinInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') unlockControls();
+});
+
+function setUnlockedUI(unlocked) {
+  isUnlocked = unlocked;
+  unlockCard.style.display = unlocked ? 'none' : 'block';
+  const els = document.querySelectorAll('.protected-section');
+  els.forEach(el => el.classList.toggle('unlocked', unlocked));
+}
+
+function unlockControls() {
+  const val = pinInput.value.trim();
+  if (!val) {
+    showToast('Inserisci la password', true);
+    return;
+  }
+  apiPost({ webAction: 'verify', pin: val })
+    .then((res) => {
+      if (res && res.ok) {
+        currentPin = val;
+        setUnlockedUI(true);
+        showToast('Comandi sbloccati!');
+      } else {
+        showToast('Password errata!', true);
+        pinInput.value = '';
+      }
+    })
+    .catch(() => {
+      showToast('Errore di verifica password', true);
+    });
+}
+
+timeoutInput.addEventListener('input', () => { settingsDirty = true; });
+alwaysOnToggle.addEventListener('change', () => { settingsDirty = true; });
+autoStartInput.addEventListener('input', () => { settingsDirty = true; });
+stopPctInput.addEventListener('input', () => { settingsDirty = true; });
+
+function showToast(msg, isError = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (isError ? ' err' : '');
+  setTimeout(() => { t.className = 'toast'; }, 3000);
+}
+
+function resetCalSlider() {
+  calConfirmSlider.value = 0;
+  calSlideFill.style.width = '0%';
+}
+function openCalModal() {
+  resetCalSlider();
+  document.getElementById('calStepWarn').style.display = 'block';
+  document.getElementById('calStepActions').style.display = 'none';
+  document.getElementById('calModal').classList.add('open');
+}
+function closeCalModal() {
+  document.getElementById('calModal').classList.remove('open');
+  resetCalSlider();
+}
+calConfirmSlider.addEventListener('input', () => {
+  const v = parseInt(calConfirmSlider.value, 10) || 0;
+  calSlideFill.style.width = v + '%';
+  if (v >= 94) {
+    document.getElementById('calStepWarn').style.display = 'none';
+    document.getElementById('calStepActions').style.display = 'block';
+  }
+});
+
+function openHistoryModal() {
+  renderHistoryList();
+  document.getElementById('histModal').classList.add('open');
+}
+function closeHistoryModal() {
+  document.getElementById('histModal').classList.remove('open');
+}
+
+function barColor(pct) {
+  if (pct < 60) return 'var(--green)';
+  if (pct <= 85) return 'var(--yellow)';
+  return 'var(--red)';
+}
+
+function fmtDur(sec) {
+  sec = Math.max(0, Math.floor(sec));
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (d > 0) return d + 'g ' + h + 'h';
+  if (h > 0) return h + 'h ' + m + 'm';
+  if (m > 0) return m + 'm ' + s + 's';
+  return s + 's';
+}
+
+function fmtTargetClock(currentEpoch, deltaSec) {
+  const nowDt = new Date(currentEpoch * 1000);
+  const targetDt = new Date((currentEpoch + deltaSec) * 1000);
+  const hm = targetDt.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+  const sameDay = nowDt.getFullYear() === targetDt.getFullYear() &&
+                  nowDt.getMonth() === targetDt.getMonth() &&
+                  nowDt.getDate() === targetDt.getDate();
+  if (sameDay) return hm;
+  const dm = targetDt.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
+  return dm + ' ' + hm;
+}
+
+function fmtDateTime(epochSec) {
+  const dt = new Date(epochSec * 1000);
+  return dt.toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function renderHistoryList() {
+  document.getElementById('hSumAuto').textContent = cachedHistory.autoCompletedCount || 0;
+  document.getElementById('hSumAvg').textContent =
+    (cachedHistory.avgDrainDurationSec > 0) ? fmtDur(cachedHistory.avgDrainDurationSec) : '--';
+  const listEl = document.getElementById('histList');
+  const recs = cachedHistory.records || [];
+  if (recs.length === 0) {
+    listEl.innerHTML = '<div style="text-align:center;padding:14px;">Nessuno svuotamento registrato finora.</div>';
+    return;
+  }
+  listEl.innerHTML = recs.map(r => {
+    const whenTxt = (r.epoch && r.epoch > 1700000000) ? fmtDateTime(r.epoch) : ('Uptime ' + fmtDur(r.uptimeSec));
+    const pill = r.outcome === 0
+      ? '<span class="pill ok">COMPLETATO</span>'
+      : (r.outcome === 1 ? '<span class="pill stop">STOP MANUALE</span>' : '<span class="pill err">ERRORE STALLO</span>');
+    return '<div class="hist-item">' +
+      '<div class="hist-top"><strong style="color:var(--text);">' + whenTxt + '</strong>' + pill + '</div>' +
+      '<div style="display:flex;justify-content:space-between;">' +
+      '<span>' + (r.isManual ? 'Manuale' : 'Automatico') + ' &bull; ' + r.startPct + '% &rarr; ' + r.endPct + '%</span>' +
+      '<span>Durata: ' + fmtDur(r.durationSec) + '</span></div></div>';
+  }).join('');
+}
+
+function applyRemoteData(res) {
+  const badge = document.getElementById('connBadge');
+
+  if (!res || !res.hasData) {
+    badge.textContent = 'Disconnesso';
+    badge.className = 'badge err';
+    return;
+  }
+
+  if (res.cmdResult && res.cmdResult.id && res.cmdResult.id !== lastSeenCmdResultId) {
+    if (lastSeenCmdResultId !== 0 && res.cmdResult.message) {
+      showToast(res.cmdResult.message, !res.cmdResult.ok);
+    }
+    lastSeenCmdResultId = res.cmdResult.id;
+  }
+
+  if (res.history) cachedHistory = res.history;
+
+  const d = res.status;
+  const ageSec = res.ageSec || 0;
+  const isOffline = ageSec > 45;
+  const hasErr = (d.pumpMode === 'ERRORE_TIMEOUT' || !!d.sensorError);
+
+  if (hasErr) {
+    badge.textContent = 'ERRORE';
+    badge.className = 'badge err';
+  } else if (isOffline) {
+    badge.textContent = 'Disconnesso';
+    badge.className = 'badge err';
+  } else {
+    badge.textContent = 'Online';
+    badge.className = 'badge ok';
+  }
+
+  document.getElementById('timeoutAlert').classList.toggle('visible', d.pumpMode === 'ERRORE_TIMEOUT');
+  document.getElementById('sensorAlert').classList.toggle('visible', !!d.sensorError);
+  if (d.sensorError) {
+    document.getElementById('sensorAlertDur').textContent = 'assente da ' + fmtDur(d.sensorLostSec || 300);
+  }
+
+  const pct = Math.round(d.levelPercent || 0);
+  document.getElementById('levelPct').textContent = d.sensorValid ? (pct + '%') : 'N/D';
+  document.getElementById('distanceCm').textContent = d.sensorValid ? (Number(d.distanceCm).toFixed(2) + ' cm') : '--.-- cm';
+
+  waterState.targetPct = d.sensorValid ? Math.max(0, Math.min(100, d.levelPercent)) : 0;
+  waterState.valid = !!d.sensorValid;
+  waterState.pumping = !!d.pumpRunning;
+  waterState.error = hasErr;
+  const mCard = document.getElementById('monitorCard');
+  mCard.classList.toggle('draining', waterState.pumping);
+  mCard.classList.toggle('error', waterState.error && !waterState.pumping);
+
+  const bar = document.getElementById('levelBar');
+  bar.style.width = (d.sensorValid ? Math.max(0, Math.min(100, pct)) : 0) + '%';
+  bar.style.backgroundColor = barColor(pct);
+
+  const pumpCardEl = document.getElementById('pumpStatCard');
+  const pumpLblEl = document.getElementById('pumpStateLabel');
+  const pumpEl = document.getElementById('pumpState');
+  if (d.sensorDegraded && !d.pumpRunning && d.pumpMode !== 'ERRORE_TIMEOUT') {
+    pumpCardEl.className = 'stat ' + (d.sensorError ? 'sensor-err' : 'sensor-warn');
+    pumpLblEl.textContent = 'Sensore non rilevato';
+    pumpEl.textContent = 'da ' + fmtDur(d.sensorLostSec || 1);
+  } else {
+    pumpCardEl.className = 'stat';
+    pumpLblEl.textContent = 'Stato Pompa';
+    if (d.pumpRunning) {
+      const sec = Math.floor((d.pumpRunElapsedMs || 0) / 1000);
+      const stallSec = Math.floor((d.pumpStallElapsedMs || 0) / 1000);
+      pumpEl.textContent = 'ON (' + sec + 's | stallo ' + stallSec + 's)';
+      pumpEl.style.color = 'var(--accent)';
+    } else if (d.pumpMode === 'ERRORE_TIMEOUT') {
+      pumpEl.textContent = 'BLOCCATA';
+      pumpEl.style.color = 'var(--red)';
+    } else {
+      pumpEl.textContent = 'OFF';
+      pumpEl.style.color = 'var(--text)';
+    }
+  }
+
+  const btnPump = document.getElementById('btnPumpToggle');
+  if (d.pumpRunning) {
+    btnPump.textContent = 'Ferma Pompa';
+    btnPump.className = 'btn-pump-off';
+  } else {
+    btnPump.textContent = 'Avvia Pompa (Manuale)';
+    btnPump.className = 'btn-pump-on';
+  }
+  btnPump.disabled = (d.pumpMode === 'ERRORE_TIMEOUT' && !d.pumpRunning);
+
+  document.getElementById('drainCount').textContent = d.drainCount || 0;
+
+  const nextEl = document.getElementById('nextDrain');
+  if (d.pumpRunning) {
+    nextEl.textContent = 'Pompa attiva';
+  } else if (!d.sensorValid) {
+    nextEl.textContent = 'N/D';
+  } else if (d.nextDrainSec === 0) {
+    nextEl.textContent = 'Imminente';
+  } else if (d.nextDrainSec > 0) {
+    let txt = 'tra ' + fmtDur(d.nextDrainSec);
+    if (d.timeSynced && d.currentEpoch > 0) {
+      txt += ' (~' + fmtTargetClock(d.currentEpoch, d.nextDrainSec) + ')';
+    }
+    nextEl.textContent = txt;
+  } else {
+    nextEl.textContent = d.trendReady ? 'Stabile' : 'Analisi in corso...';
+  }
+
+  const lastEl = document.getElementById('lastDrain');
+  if (d.lastDrainEpoch > 0) {
+    let txt = fmtDateTime(d.lastDrainEpoch);
+    if (d.timeSynced && d.currentEpoch >= d.lastDrainEpoch) {
+      txt += ' (' + fmtDur(d.currentEpoch - d.lastDrainEpoch) + ' fa)';
+    }
+    lastEl.textContent = txt;
+  } else if (d.hasLastDrainSession) {
+    lastEl.textContent = fmtDur(d.lastDrainAgoSec) + ' fa';
+  } else {
+    lastEl.textContent = (d.drainCount > 0) ? 'Vedi storico' : 'Mai';
+  }
+
+  const emptyTxt = Number(d.distVuotoCm || 35).toFixed(2);
+  const fullTxt = Number(d.distPienoCm || 8).toFixed(2);
+  document.getElementById('calEmpty').textContent = emptyTxt;
+  document.getElementById('calFull').textContent = fullTxt;
+  document.getElementById('modalEmpty1').textContent = emptyTxt;
+  document.getElementById('modalFull1').textContent = fullTxt;
+  document.getElementById('modalEmpty2').textContent = emptyTxt;
+  document.getElementById('modalFull2').textContent = fullTxt;
+  const calLiveCm = d.rawSensorOk ? d.rawDistanceCm : (d.sensorValid ? d.distanceCm : null);
+  document.getElementById('modalLive1').textContent = (calLiveCm !== null) ? (Number(calLiveCm).toFixed(2) + ' cm') : 'N/D';
+  document.getElementById('modalLive2').textContent = (calLiveCm !== null) ? (Number(calLiveCm).toFixed(2) + ' cm (' + pct + '%)') : 'Sensore N/D';
+
+  document.getElementById('lblStartPct').textContent = d.autoStartPct || 80;
+  document.getElementById('lblStopPct').textContent = d.stopPct || 40;
+
+  document.getElementById('lastDrainDur').textContent =
+    (d.lastDrainDurationSec > 0) ? fmtDur(d.lastDrainDurationSec) : '--';
+  document.getElementById('avgDrainDur').textContent =
+    (d.avgDrainDurationSec > 0) ? fmtDur(d.avgDrainDurationSec) : '--';
+
+  const rateEl = document.getElementById('fillRateVal');
+  if (d.pumpRunning) {
+    rateEl.textContent = 'Svuotamento in corso';
+  } else if (d.fillRatePctPerHour && d.fillRatePctPerHour > 0.05) {
+    rateEl.textContent = '+' + Number(d.fillRatePctPerHour).toFixed(1) + ' % / ora';
+  } else {
+    rateEl.textContent = d.trendReady ? 'Livello stabile' : 'Raccolta campioni in corso...';
+  }
+
+  if (!settingsDirty) {
+    timeoutInput.value = d.pumpTimeoutSec || 300;
+    alwaysOnToggle.checked = !!d.displayAlwaysOn;
+    autoStartInput.value = d.autoStartPct || 80;
+    stopPctInput.value = d.stopPct || 40;
+  }
+
+  const staText = d.staConnected
+    ? ('BDR: ' + d.staIp + ' (' + d.staRssi + ' dBm)')
+    : 'BDR: offline';
+  document.getElementById('netInfo').textContent = staText + ' | Uptime: ' + fmtDur(d.uptimeSec || 0);
+}
+
+function pollState() {
+  apiGetState()
+    .then(applyRemoteData)
+    .catch(() => {
+      const badge = document.getElementById('connBadge');
+      badge.textContent = 'Disconnesso';
+      badge.className = 'badge err';
+    });
+}
+
+function sendCmd(action, params = {}) {
+  if (!isUnlocked || !currentPin) {
+    showToast('Sblocca prima i comandi inserendo la password', true);
+    return;
+  }
+  showToast('Invio comando...');
+  apiPost({ webAction: 'cmd', pin: currentPin, action: action, params: params })
+    .then((res) => {
+      if (res && res.authError) {
+        setUnlockedUI(false);
+        showToast('Password errata!', true);
+        return;
+      }
+      showToast(res.message, !res.ok);
+      setTimeout(pollState, 1500);
+    })
+    .catch((err) => {
+      showToast('Errore invio comando: ' + err, true);
+    });
+}
+
+function saveRemoteSettings() {
+  const tVal = parseInt(timeoutInput.value, 10);
+  const startVal = parseInt(autoStartInput.value, 10);
+  const stopVal = parseInt(stopPctInput.value, 10);
+  if (isNaN(tVal) || tVal < 30 || tVal > 1800) {
+    showToast('Timeout non valido (30–1800s)', true);
+    return;
+  }
+  if (isNaN(startVal) || isNaN(stopVal) || stopVal < 0 || stopVal > 95 || startVal < 5 || startVal > 100 || startVal <= stopVal) {
+    showToast('Soglie non valide (0 <= arresto < avvio <= 100)', true);
+    return;
+  }
+  sendCmd('save_settings', {
+    timeoutSec: tVal,
+    displayAlwaysOn: alwaysOnToggle.checked,
+    autoStartPct: startVal,
+    stopPct: stopVal
+  });
+  settingsDirty = false;
+}
+
+const waterState = { targetPct: 0, visualPct: 0, valid: false, pumping: false, error: false };
+
+(function initPixelAquarium() {
+  const canvas = document.getElementById('waterBgCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+
+  const N = 94, W = 86, H = 86;
+  const PAL_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#$%&()*+-/:";
+  const AQ = {"pal":["#f1f7d2","#e3edf5","#f7e33a","#f8dd2e","#e7c67a","#ddbc6d","#f6d031","#edbf32","#bde3f2","#a3e0ef","#9ec897","#96bd51","#7fd8e8","#66cee2","#65c6cd","#71b94c","#dfad91","#e2ae39","#e79167","#df8c42","#bca280","#af9c36","#b29454","#b48d5c","#77b566","#59ae77","#968e4b","#6c9875","#42a892","#389aa7","#288b7e","#238a57","#c06c4c","#89704d","#c44d40","#a6594c","#6d7b97","#6b7932","#6b6c6f","#666c2c","#3c767f","#177d77","#55677d","#2668a3","#49559c","#21577b","#115069","#0e4a59","#da3f40","#d2333a","#d72c37","#c42937","#a72e3b","#7b3439","#8a213b","#540c31","#363649","#0c385f","#261d3f","#071144","#370633","#210735","#080832","#090537"],"sb":".3n7.2n3&2n4.2n4.2n2.8nD7n2D3n2D3Rn2D3Rn2D2n2.6nD2V2D5MD18nLn.5nDV3D5dD13V2D3nLln.4nDV2D7/DHD6/2D2V2D2nL4n.3nD5/3D2:H/D3/3D8nL5n.2nDVD2/D3/3Vn/3D3/D3OD3nLnL4.2nV2D/D6/D/D7/D2MED2n4L3.2nD2/D/2:D2lG/GVD2/2:/D/DMdDnLn3L3.2nD2/:D3/2Da:aD/3D3:/DMdDnLln2L2n.2nD2/D6/H/V/D7/DFHDnL2nL3n.2nD2/D2/2D3n:lDV2D4G/D4nL6n.2ni4/D2/2DRV/D4i5D4lL5n.3iC2D2/D4/2D2/D2iCDED2iD2nL3n2Ln.2iEiEDiD/:H2D5:iDiEDiD4nL3laLn.2iDEDiD3G/2:TD3iDED2iD4HnL5n.3iD8HTD3/DiD9lLlnL3n.2)iD8/3H/D2iD8HnLn3L2n.2)iHD5/:B3/D3iHD6H2nLln2Ln.3)2iH2G&/B3x2/D3iH2D3GH2RnL2nlLn.4)niH:xB2y2x/D/D3iH4V2HlL6n.5nG/yBx2y/2GTD/D3iH2V3HnL/2LnLn.4/n:xBy2:2DRTDTD6HV2H2n/B2/Ll.4/In!Bxy/lD2HD13:JB3MLn.4:Jl!Bx:/VD12VD2:B5JLn.4/I:/2x/D/CG2D12/2B3M:Pn.4/3D2/2D:ln2l2nl3nl5/D:BJ2/Ln.5D/2D4/2B/y3:B3/B3/D2l/J:nl.6:/D6/:k:y/&Bk/B2/2D2:M/:JM/.6D:2/D3/D3/:2B/B2:/D2:/&J4M/.6:!/-/-:2/2D4/:/.D2/:/9.6:B2y:/i2ji:/2D5:/j4:#5/.7B2y/:3i:/y2:/:/2i:/3j:#/3#/.12Ijij2/y/ij8i:#5/.15Ii2:ij10/#5/.15I3ij11/#5/.15r3I2Bj9:#3:/).15O3r3I3/:/4:2/2)3.15O6r2I5#3/)5.15O8r5IB2I2)4.15O13r5I4.15O18r4.15O22.15O22.15O22.5","sail":".4).8)h).7IhI).5)IhI2).3)I2hI3.6h.2k)6h)2:3/3:2/2h2.","tug":".5k.9)&.8)/2).4)3/I&/.4:/2I2&h)3.2ks/2:/2:2.","smoke":".8).19)3.).5)k3).6k.5","bot":".348t.85L.83tL2.68vP2v.11tL.69uP2v.11tLt.69uPv.11tLt.69uPu.11tL.65v.4vP2v.11L.64vPv.4vPv.3u.5tL2t.3Lt.58vPv.4vPv.2vPv.5L.5Lt.59fPv.2uP2v.2vPu.4tL.5Lt.59vPv.2vP2v.2vf2v.3tL.4L.61vPv.vP2v.3vf2v.3tL.4L.2v2.2v.53vPfv.vfPv.2vPf2v.3tL.4L.2vPv.v.53vPf.vP2fv.2vPfv.4tL.4L2t.vPv2.53vPf.vPf2v.vPfv.6L2.4Lt.ufvP.53vPfv2Pf2v2Pfv.6t2L.4Lt.2fvP.53vP2fvPf2v2Pfv2.7L2.3Lt.vfPf.54uPfvPf2vPfv2.9L.t.L.vPvPv.54vPf2vPfvf2u.10L.2L.2v2Pv.55uP2fvPfvf2v.11L2.4vfv.56vP2f5v2.6F2XE.6vfvE.6EXFU2EX.44v2P2fvZ.3K2E3X3UEFE2FE2XE2.5EXEXEU2FEF.8FXE2UE6.E2F16.2EXEXUEF.6k.X2/X20UX2E3FE5FEU2EX8EXEX2E15XFEXEX6&qk&q3X-","fOrg":".21:3.7/:.3:T2:2.5/T:.:2iT3:2.4:T:T4gTBT:.3:g3TgTiT:T/.2:Ti:T7:.3:/:.:2g2:2/.9:3.21","fBlu":".I.35:s:.9:3s:.3:.3I.:O3d2:.:.5:O:Osdsd:s:.4:c2Osd2k:s:.5:c2s2k:.:s.6:3ks).2:.9:3.35","crab":".2+2.8+3.2+%w+.6+x+x.2+xz+./.2/.+w2x.3+!+.+5.+x+.4+z+x4!+y+.6+yx3!2y+.6+x+x2!x!+y+.4%x+z+5.+%.4+2.+.4+.2+.2","straw":".12).9/3.14)i.6/:B3/.13)2i.4/B3x2/.14).i.:xB2y2x/.18/yBx2y/2.18:xBy2:2.20!Bxy/.19:.2!Bx:/.19/I:/2x/D/C.17/3D2/2D:l.17/D/2D4/2./y2.13/:/D6/:.:y/.12/D:2/D3/D.2/:2.12):!/-/-:2/2.16):B2y/:i2j.:/2.14/B2y/:3i:/y2:.13/Bwxq.6/y/.13$Bwy(.7:.14$Bw%.22(QBy%.22(QBy/.22:Bwyd.22/Bwyd.22!Bwyd.22!Bw+.22*ABy+.22*B2y+.22*B2yd.22/BQx.23!BQxd.22!BQ+.23B2y-.22*B2y-.22:B2xd.22zBSx.23zBgx.23B2y%.22rB2y%.22rB2y/.22tBwxt.22%Bw!t.22%Bw%.23qBy%.22(SBx%.22(gBx/.22:B2yt.22$Bx2t.22$Bw+tB.21KBw+.N.20*QBx-.N.20*B2y.23/B2yr.22!BQx.23!By-.23B2y-.22*B2y-.J.20:B2x.2J.20*BNx.N.21kBy2.23%Bx$.23B2M$.J.21B2yN2.22/wy/.17","bub":".42Iji.23I.30I2.18M.2I2.16M.6M.14M.25B.21M.67NB.21J.23M.25m.18B.5d.110B.23I.43J.90BN.20NOrB.20NB.47I.8Nd.10N.11B.21N.36J.8BN.8NB.10B.2N.7JrB.9N.N.9N2.J.8N.44M.13I.21ItI.21Nr.6J.15M.63"};
+
+  function decodeRle(rleStr, w, h) {
+    const out = new Int16Array(w * h);
+    out.fill(-1);
+    let idx = 0, i = 0;
+    const len = rleStr.length;
+    while (i < len && idx < w * h) {
+      const ch = rleStr[i++];
+      let numStr = '';
+      while (i < len && rleStr.charCodeAt(i) >= 48 && rleStr.charCodeAt(i) <= 57) numStr += rleStr[i++];
+      const count = numStr ? parseInt(numStr, 10) : 1;
+      const cIdx = (ch === '.') ? -1 : PAL_CHARS.indexOf(ch);
+      for (let k = 0; k < count && idx < w * h; k++) out[idx++] = cIdx;
+    }
+    return { w, h, data: out };
+  }
+
+  const palRgb = AQ.pal.map(hex => [
+    parseInt(hex.slice(1, 3), 16),
+    parseInt(hex.slice(3, 5), 16),
+    parseInt(hex.slice(5, 7), 16)
+  ]);
+
+  const sprSb    = decodeRle(AQ.sb, 37, 45);
+  const sprSail  = decodeRle(AQ.sail, 10, 8);
+  const sprTug   = decodeRle(AQ.tug, 11, 6);
+  const sprSmoke = decodeRle(AQ.smoke, 11, 5);
+  const sprBot   = decodeRle(AQ.bot, 86, 28);
+  const sprFOrg  = decodeRle(AQ.fOrg, 15, 10);
+  const sprFBlu  = decodeRle(AQ.fBlu, 15, 12);
+  const sprCrab  = decodeRle(AQ.crab, 16, 9);
+  const sprStraw = decodeRle(AQ.straw, 27, 63);
+  const sprBub   = decodeRle(AQ.bub, 23, 48);
+
+  const imgData = ctx.createImageData(W, H);
+  const buf = imgData.data;
+
+  function setPx(x, y, r, g, b) {
+    const ix = x - 4, iy = y - 4;
+    if (ix < 0 || ix >= W || iy < 0 || iy >= H) return;
+    const off = (iy * W + ix) * 4;
+    buf[off] = r; buf[off + 1] = g; buf[off + 2] = b; buf[off + 3] = 255;
+  }
+
+  function setPalPx(x, y, cIdx) {
+    if (cIdx < 0) return;
+    const ix = x - 4, iy = y - 4;
+    if (ix < 0 || ix >= W || iy < 0 || iy >= H) return;
+    const rgb = palRgb[cIdx];
+    const off = (iy * W + ix) * 4;
+    buf[off] = rgb[0]; buf[off + 1] = rgb[1]; buf[off + 2] = rgb[2]; buf[off + 3] = 255;
+  }
+
+  function drawSpr(spr, x0, y0, minY, maxY, flipX) {
+    const w = spr.w, h = spr.h, d = spr.data;
+    for (let r = 0; r < h; r++) {
+      const y = y0 + r;
+      if (y < minY || y > maxY) continue;
+      const rowOff = r * w;
+      for (let c = 0; c < w; c++) {
+        const srcC = flipX ? (w - 1 - c) : c;
+        const cIdx = d[rowOff + srcC];
+        if (cIdx >= 0) {
+          const x = x0 + c;
+          if (x >= 4 && x < 90) setPalPx(x, y, cIdx);
+        }
+      }
+    }
+  }
+
+  let animPhase = 0, sbRise = 0.0, strawProg = 0.0, lastTs = 0;
+  const curWy = new Int16Array(N);
+
+  function swimTrack(t, speed, minX, maxX, phase) {
+    const span = maxX - minX;
+    const raw = (t * speed + phase) % (2 * span);
+    const goingRight = raw < span;
+    const x = Math.round(goingRight ? (minX + raw) : (maxX - (raw - span)));
+    return { x, goingRight };
+  }
+
+  function renderAquarium(ts) {
+    if (!lastTs) lastTs = ts;
+    const dt = Math.min(0.05, (ts - lastTs) / 1000);
+    lastTs = ts;
+    const t = ts / 1000;
+
+    if (waterState.pumping) {
+      if (animPhase === 0 || animPhase === 4) animPhase = (sbRise < 0.99) ? 1 : 2;
+      if (animPhase === 1) {
+        sbRise = Math.min(1.0, sbRise + dt * 1.15);
+        if (sbRise >= 1.0) animPhase = 2;
+      } else if (animPhase === 2) {
+        strawProg = Math.min(1.0, strawProg + dt * 1.35);
+        if (strawProg >= 1.0) animPhase = 3;
+      }
+    } else {
+      if (animPhase === 1 || animPhase === 2 || animPhase === 3) animPhase = 4;
+      if (animPhase === 4) {
+        if (strawProg > 0.0) strawProg = Math.max(0.0, strawProg - dt * 1.6);
+        else if (sbRise > 0.0) sbRise = Math.max(0.0, sbRise - dt * 1.25);
+        else animPhase = 0;
+      }
+    }
+
+    waterState.visualPct += (waterState.targetPct - waterState.visualPct) * 0.08;
+    const pct = waterState.visualPct;
+    const shiftY = Math.round(35 - (pct / 100) * 60);
+    for (let x = 4; x < 90; x++) {
+      const p1 = (x - 4) * 0.072 - t * 0.45;
+      const waveAnim = Math.round(Math.sin(p1) * 1.8);
+      curWy[x] = Math.max(10, Math.min(84, 44 + shiftY + waveAnim));
+    }
+
+    buf.fill(0);
+    for (let y = 4; y < 90; y++) {
+      for (let x = 4; x < 90; x++) setPx(x, y, 34, 36, 56);
+    }
+
+    const sbFollowY = Math.max(-4, Math.min(28, shiftY));
+    const sbSlideY = Math.round((1.0 - sbRise) * 42);
+    const sbTotY = sbFollowY + sbSlideY;
+    const isSucking = (animPhase === 3);
+    const tremorX = (isSucking && (Math.floor(t * 14) % 4 === 0)) ? 1 : 0;
+
+    if (sbRise > 0.001) {
+      drawSpr(sprSb, 35 + tremorX, 8 + sbTotY, 4, 89, false);
+      if (isSucking) {
+        const puffBeat = (Math.floor(t * 3.5) % 2 === 1);
+        if (puffBeat) {
+          for (let dy = 12; dy <= 16; dy++) {
+            setPx(35 + tremorX, 8 + sbTotY + dy, 232, 96, 48);
+            setPx(36 + tremorX, 8 + sbTotY + dy, 248, 224, 48);
+            setPx(59 + tremorX, 8 + sbTotY + dy, 248, 224, 48);
+            setPx(60 + tremorX, 8 + sbTotY + dy, 232, 96, 48);
+          }
+        }
+        const sweatOff = Math.floor(t * 4) % 3;
+        setPx(45 + tremorX, 11 + sbTotY + sweatOff, 72, 204, 248);
+        setPx(59 + tremorX, 15 + sbTotY + sweatOff, 72, 204, 248);
+        setPx(59 + tremorX, 16 + sbTotY + sweatOff, 200, 240, 255);
+      }
+    }
+
+    const sailX = 18 + Math.round(Math.sin(t * 0.45) * 4);
+    const sailHullWy = curWy[Math.min(89, Math.max(4, sailX + 4))];
+    drawSpr(sprSail, sailX, sailHullWy - 8, 4, 89, false);
+
+    const tugX = 66 + Math.round(Math.cos(t * 0.375) * 4);
+    const tugHullWy = curWy[Math.min(89, Math.max(4, tugX + 5))];
+    drawSpr(sprTug, tugX, tugHullWy - 6, 4, 89, false);
+    const smokeStep = Math.floor(t * 1.5) % 3;
+    drawSpr(sprSmoke, tugX + smokeStep, tugHullWy - 11 - smokeStep, 4, 89, false);
+
+    for (let x = 4; x < 90; x++) {
+      const wy = curWy[x];
+      const prevWy = curWy[Math.max(4, x - 1)];
+      const nextWy = curWy[Math.min(89, x + 1)];
+      const span = Math.max(14, 88 - wy);
+
+      for (let y = wy; y < 90; y++) {
+        const dy = y - wy;
+        if (dy === 0) { setPx(x, y, 200, 240, 255); continue; }
+        if (dy === 1) {
+          if (prevWy < wy || nextWy < wy) setPx(x, y, 200, 240, 255);
+          else setPx(x, y, 56, 152, 216);
+          continue;
+        }
+        const rel = dy / span;
+        const checker = ((x + y) & 1) === 0;
+        const sparse1 = ((x & 1) === 0) && ((y & 1) === 0);
+        const sparse2 = ((x & 1) === 1) && ((y & 1) === 1);
+        let r = 56, g = 152, b = 216;
+        if (rel < 0.25) { r = 68; g = 176; b = 214; }
+        else if (rel < 0.28) { if (sparse1) { r = 46; g = 146; b = 198; } else { r = 68; g = 176; b = 214; } }
+        else if (rel < 0.35) { if (checker) { r = 46; g = 146; b = 198; } else { r = 68; g = 176; b = 214; } }
+        else if (rel < 0.38) { if (sparse2) { r = 68; g = 176; b = 214; } else { r = 46; g = 146; b = 198; } }
+        else if (rel < 0.56) { r = 46; g = 146; b = 198; }
+        else if (rel < 0.59) { if (sparse1) { r = 25; g = 118; b = 177; } else { r = 46; g = 146; b = 198; } }
+        else if (rel < 0.65) { if (checker) { r = 25; g = 118; b = 177; } else { r = 46; g = 146; b = 198; } }
+        else if (rel < 0.85) { r = 25; g = 118; b = 177; }
+        else if (rel < 0.91) { if (checker) { r = 12; g = 72; b = 140; } else { r = 25; g = 118; b = 177; } }
+        else { r = 12; g = 72; b = 140; }
+        setPx(x, y, r, g, b);
+      }
+    }
+
+    for (let r = 0; r < sprBot.h; r++) {
+      const y = 62 + r;
+      const rowOff = r * sprBot.w;
+      const heightFromSand = Math.max(0, 85 - y);
+      const sway = (heightFromSand > 0)
+        ? Math.round(Math.sin(t * 1.15 + heightFromSand * 0.22) * (heightFromSand > 7 ? 1.4 : 0.7))
+        : 0;
+      for (let c = 0; c < sprBot.w; c++) {
+        const cIdx = sprBot.data[rowOff + c];
+        if (cIdx >= 0) {
+          const x = Math.min(89, Math.max(4, 4 + c + sway));
+          if (y >= 85 || y >= curWy[x] + 1) setPalPx(x, y, cIdx);
+        }
+      }
+    }
+
+    const crabWalk = Math.round(Math.sin(t * 0.675) * 9);
+    const crabFlip = (Math.floor(t * 3.25) % 2 === 1);
+    const crabX = 52 + crabWalk;
+    drawSpr(sprCrab, crabX, 80, Math.min(80, curWy[Math.min(89, crabX + 7)] + 1), 89, crabFlip);
+
+    const bubSeeds = [[22, 0], [38, 17], [51, 9], [66, 26], [79, 5]];
+    for (let i = 0; i < bubSeeds.length; i++) {
+      const bxBase = bubSeeds[i][0], phase = bubSeeds[i][1];
+      const bx = bxBase + Math.round(Math.sin(t * 1.2 + phase) * 1.0);
+      const spanW = Math.max(6, 83 - (curWy[bx] + 3));
+      const travel = Math.floor(t * 2.6 + phase) % spanW;
+      const by = 83 - travel;
+      if (by >= curWy[bx] + 3 && by < 84) setPx(bx, by, 200, 240, 255);
+    }
+
+    const trOrg = swimTrack(t, 4.25, 10, 66, 4.0);
+    const bobOrg = Math.round(Math.sin(t * 1.6) * 1.2);
+    const midOrgX = Math.min(89, trOrg.x + 7);
+    const yOrg = Math.min(73, Math.max(curWy[midOrgX] + 2, 49 + Math.round(shiftY * 0.5) + bobOrg));
+    drawSpr(sprFOrg, trOrg.x, yOrg, curWy[midOrgX] + 1, 84, !trOrg.goingRight);
+
+    const trBlu = swimTrack(t, 3.4, 14, 68, 22.0);
+    const bobBlu = Math.round(Math.sin(t * 1.3 + 1.2) * 1.2);
+    const midBluX = Math.min(89, trBlu.x + 7);
+    const yBlu = Math.min(73, Math.max(curWy[midBluX] + 3, 59 + Math.round(shiftY * 0.45) + bobBlu));
+    drawSpr(sprFBlu, trBlu.x, yBlu, curWy[midBluX] + 1, 84, trBlu.goingRight);
+
+    if (strawProg > 0.001) {
+      const topStartY = 25 + sbTotY;
+      const maxDrawY = Math.round(topStartY + strawProg * (87 - topStartY));
+      const elbowY = 40 + sbTotY;
+      for (let refY = 25; refY <= 40; refY++) {
+        const y = refY + sbTotY;
+        if (y < 4 || y > Math.min(87, maxDrawY)) continue;
+        const rowOff = (refY - 25) * sprStraw.w;
+        for (let c = 0; c < sprStraw.w; c++) {
+          const cIdx = sprStraw.data[rowOff + c];
+          if (cIdx >= 0) setPalPx(23 + c + tremorX, y, cIdx);
+        }
+      }
+      const spanCur = Math.max(1, 87 - elbowY);
+      for (let y = Math.max(4, elbowY + 1); y <= Math.min(87, maxDrawY); y++) {
+        const tSub = (y - elbowY) / spanCur;
+        const refY = Math.min(87, Math.max(41, Math.round(40 + tSub * 47)));
+        const rowOff = (refY - 25) * sprStraw.w;
+        for (let c = 0; c < sprStraw.w; c++) {
+          const cIdx = sprStraw.data[rowOff + c];
+          if (cIdx >= 0) setPalPx(23 + c, y, cIdx);
+        }
+      }
+    }
+
+    if (isSucking) {
+      const bubScroll = Math.floor(t * 14) % 48;
+      for (let y = 41; y <= 86; y++) {
+        const srcR = (y - 40 + bubScroll) % 48;
+        const dxStraw = Math.round(((40 + srcR) - y) * (7.5 / 47.0));
+        const rowOff = srcR * sprBub.w;
+        for (let c = 0; c < sprBub.w; c++) {
+          const cIdx = sprBub.data[rowOff + c];
+          if (cIdx >= 0) {
+            const x = 23 + c + dxStraw;
+            if (x >= 4 && x < 90 && y >= curWy[x] + 2) setPalPx(x, y, cIdx);
+          }
+        }
+      }
+    }
+
+    ctx.putImageData(imgData, 0, 0);
+    requestAnimationFrame(renderAquarium);
+  }
+
+  requestAnimationFrame(renderAquarium);
+})();
+
+pollState();
+setInterval(pollState, 2500);
+</script>
+</body>
+</html>
